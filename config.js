@@ -10,10 +10,10 @@ import XLSX from 'xlsx';
 // Carregar variáveis de ambiente
 dotenv.config();
 
-// Caminhos dos arquivos
+// Caminhos dos arquivos (definidos nas variáveis de ambiente)
 const userStateFilePath = './userState.json';
 const reportFilePath = './atendimentos.csv';
-const spreadsheetPath = 'C:\\Users\\058718.CBMSA\\Desktop\\EFETIVO UNIFICADO - IMPRIMIR REV01.xlsx';
+const spreadsheetPath = process.env.SPREADSHEET_PATH; // Defina esta variável no Render
 
 // Carregar estado do usuário
 const loadUserState = () => {
@@ -43,7 +43,8 @@ let userState = loadUserState();
 // Configurações do cliente WhatsApp
 const client = new Client({
     puppeteer: {
-        executablePath: 'C:\\Users\\058718.CBMSA\\Downloads\\chrome-win\\chrome-win\\chrome.exe',
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
     },
     authStrategy: new LocalAuth(),
 });
