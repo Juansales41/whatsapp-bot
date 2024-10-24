@@ -1,0 +1,225 @@
+const qrcode = require('qrcode-terminal');
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const puppeteer = require('puppeteer');
+const fs = require('fs');
+const path = require('path');
+const nodemailer = require('nodemailer');
+const { v4: uuidv4 } = require('uuid');
+
+const client = new Client({
+    puppeteer: {
+        executablePath: 'C:\\Users\\058718\\Downloads\\chrome-win\\chrome-win\\chrome.exe',
+    },
+    authStrategy: new LocalAuth()
+});
+
+let userState = {};
+const reportFilePath = path.join(__dirname, 'atendimentos.csv');
+
+// Configuração do Nodemailer para o Outlook
+const transporter = nodemailer.createTransport({
+    service: 'hotmail',
+    auth: {
+        user: 'juan.silva@cbmsa.com.br',
+        pass: '!010517jC'
+    }
+});
+
+function saveReport(data) {
+    const header = 'Chat ID,Nome,Matrícula,Opção,Detalhes,Avaliação,Data,Código,Status\n';
+    const row = `${data.chatId},${data.name},${data.matricula},${data.opcao},${data.detalhes},${data.rating},${data.date},${data.code},${data.status}\n`;
+
+    if (!fs.existsSync(reportFilePath)) {
+        fs.writeFileSync(reportFilePath, header);
+    }
+
+    fs.appendFileSync(reportFilePath, row);
+}
+
+function sendReportEmail() {
+    const mailOptions = {
+        from: 'juan.silva@cbmsa.com.br',
+        to: 'juan.silva@cbmsa.com.br',
+        subject: 'Relatório de Atendimento',
+        text: 'Segue em anexo o relatório de atendimentos.',
+        attachments: [
+            {
+                filename: 'atendimentos.csv',
+                path: reportFilePath
+            }
+        ]
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+            console.error('Erro ao enviar e-mail:', error);
+        } else {
+            console.log('E-mail enviado:', info.response);
+        }
+    });
+}
+
+function generateTicketCode() {
+    return `DP${uuidv4().split('-')[0].toUpperCase()}`;
+}
+
+function updateTicketStatus(code, newStatus) {
+    for (const [chatId, state] of Object.entries(userState)) {
+        if (state.code === code) {
+            state.status = newStatus;
+            return true;
+        }
+    }
+    return false;
+}
+
+function parseFullName(fullName) {
+    const names = fullName.split(' ');
+    return { firstName: names[0], lastName: names[names.length - 1] };
+}
+
+function startUserTimer(chatId) {
+    userState[chatId].timer = setTimeout(async () => {
+        await client.sendMessage(chatId, '⏳ Parece que você está demorando para responder. Estamos aguardando sua resposta e já iniciamos o processo para te ajudar. Por favor, aguarde um momento.');
+    }, 10 * 60 * 1000); // 10 minutos
+}
+
+function clearUserTimer(chatId) {
+    if (userState[chatId] && userState[chatId].timer) {
+        clearTimeout(userState[chatId].timer);
+        userState[chatId].timer = null;
+    }
+}
+
+client.on('qr', (qr) => {
+    qrcode.generate(qr, { small: true });
+    console.log('QR RECEIVED', qr);
+});
+
+client.on('ready', () => {
+    console.log('Client is ready!');
+});
+
+client.on('message', async (message) => {
+    try {
+        const chatId = message.from;
+        const text = message.body.toLowerCase().trim();
+
+        if (message.isGroupMsg) {
+            console.log(`Mensagem recebida em grupo, não respondida.`);
+            return;
+        }
+
+        if (!userState[chatId]) {
+            userState[chatId] = { awaitingResponse: 'initial', timer: null };
+            await client.sendMessage(chatId, `👋 Olá! Eu sou a IADP 🤖, sua assistente virtual do Departamento Pessoal! Como posso te ajudar hoje?\n\n1️⃣ - Iniciar atendimento\n2️⃣ - Verificar o status de um protocolo\n\nPor favor, escolha uma das opções acima, digitando o numero indicado.`);
+            return;
+        }
+
+        clearUserTimer(chatId);
+
+        if (text === '1' && userState[chatId].awaitingResponse === 'initial') {
+            await client.sendMessage(chatId, '📝 Ótimo! Vamos começar o atendimento. Lembrando que você pode cancelar a qualquer momento digitando "cancelar". Agora, por favor, informe seu nome completo.');
+            userState[chatId].awaitingResponse = 'name';
+            startUserTimer(chatId);
+            return;
+        }
+
+        if (text === '2' && userState[chatId].awaitingResponse === 'initial') {
+            await client.sendMessage(chatId, '📄 Por favor, informe o número do seu protocolo para que possamos verificar o status do atendimento.');
+            userState[chatId].awaitingResponse = 'protocolo';
+            startUserTimer(chatId);
+            return;
+        }
+
+        if (userState[chatId].awaitingResponse === 'protocolo') {
+            const ticketCode = text;
+            const user = Object.values(userState).find(user => user.code === ticketCode);
+
+            if (user) {
+                await client.sendMessage(chatId, `🔍 Aqui está a atualização sobre o seu atendimento:\n\nNome: ${user.name}\nMatrícula: ${user.matricula}\nOpção: ${user.opcao}\nDetalhes: ${user.detalhes}\nStatus: ${user.status || 'Em andamento'}`);
+                await client.sendMessage(chatId, `📋 Código do atendimento: ${user.code}\n\nVocê pode copiar e colar este código para futuras referências.`);
+            } else {
+                await client.sendMessage(chatId, '❌ Não conseguimos encontrar um atendimento com esse código. Verifique o código e tente novamente.');
+            }
+            userState[chatId].awaitingResponse = null;
+            return;
+        }
+
+        if (text === 'cancelar') {
+            await client.sendMessage(chatId, '❌ O atendimento foi cancelado. Pedimos desculpas por não conseguirmos ajudá-lo dessa vez. Se mudar de ideia, estarei aqui para ajudar! 😉');
+            userState[chatId] = null;
+            return;
+        }
+
+        if (userState[chatId] && userState[chatId].awaitingResponse) {
+            switch (userState[chatId].awaitingResponse) {
+                case 'name':
+                    const { firstName, lastName } = parseFullName(text);
+                    userState[chatId].name = text;
+                    userState[chatId].firstName = firstName;
+                    userState[chatId].lastName = lastName;
+                    userState[chatId].awaitingResponse = 'matricula';
+                    await client.sendMessage(chatId, `📝 Perfeito, ${firstName}! Agora, por favor, informe sua matrícula (Ela precisa ter 6 dígitos e começar com 0).`);
+                    startUserTimer(chatId);
+                    break;
+                case 'matricula':
+                    if (!/^[0]\d{5}$/.test(text)) {
+                        await client.sendMessage(chatId, '⚠ A matrícula deve ter 6 dígitos e começar com 0. Tente novamente.');
+                        return;
+                    }
+                    userState[chatId].matricula = text;
+                    userState[chatId].awaitingResponse = 'opcao';
+                    userState[chatId].code = generateTicketCode();
+                    
+                    await client.sendMessage(chatId, 'Escolha uma das opções abaixo para que possamos seguir com seu atendimento:\n1️⃣ Benefícios\n2️⃣ Férias\n3️⃣ Gestão de ponto\n4️⃣ Outros');
+                    startUserTimer(chatId);
+                    break;
+                case 'opcao':
+                    userState[chatId].opcao = text;
+                    userState[chatId].awaitingResponse = 'detalhes';
+                    await client.sendMessage(chatId, `Você escolheu "${text}". Agora, por favor, descreva sua dúvida para que eu possa te ajudar da melhor forma possível.`);
+                    startUserTimer(chatId);
+                    break;
+                case 'detalhes':
+                    userState[chatId].detalhes = text;
+                    userState[chatId].awaitingResponse = 'rating';
+                    userState[chatId].status = 'Em andamento';
+
+                    await client.sendMessage(chatId, '✅ Informação coletada! Estou buscando a melhor forma para resolver seu problema, peço que aguarde um pouco. Por favor, avalie nosso atendimento de 1 a 5, 1 para insastisfeito e 5 para muito satisfeito! Isso nos ajuda a melhorar!🤩');
+                    startUserTimer(chatId);
+                    break;
+                case 'rating':
+                    userState[chatId].rating = text;
+                    userState[chatId].awaitingResponse = null;
+                    userState[chatId].status = 'Concluído';
+
+                    const reportData = {
+                        chatId,
+                        name: userState[chatId].name,
+                        matricula: userState[chatId].matricula,
+                        opcao: userState[chatId].opcao,
+                        detalhes: userState[chatId].detalhes,
+                        rating: userState[chatId].rating,
+                        date: new Date().toLocaleString(),
+                        code: userState[chatId].code,
+                        status: userState[chatId].status
+                    };
+
+                    saveReport(reportData);
+
+                    await client.sendMessage(chatId, `Obrigado, ${userState[chatId].firstName}, por sua avaliação! Seu atendimento foi concluído. 🏷️ Protocolo: ${userState[chatId].code}`);
+                    await client.sendMessage(chatId, '😄 Caso precise de mais alguma coisa, estarei por aqui!');
+
+                    // Enviar relatório por e-mail ao finalizar
+                    sendReportEmail();
+                    break;
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao processar mensagem:', error);
+    }
+});
+
+client.initialize();
+

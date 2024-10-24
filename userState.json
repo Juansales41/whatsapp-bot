@@ -1,0 +1,41 @@
+{
+  "status@broadcast": {
+    "chatId": "status@broadcast",
+    "invalidResponses": 1,
+    "awaitingResponse": "matricula",
+    "timer": null
+  },
+  "120363183388724134@g.us": {
+    "awaitingResponse": "matricula"
+  },
+  "559491785793@c.us": {
+    "awaitingResponse": "matricula"
+  },
+  "559491515551@c.us": {
+    "awaitingResponse": "matricula",
+    "matricula": "058718",
+    "detalhes": "iujiojo",
+    "rating": "",
+    "code": "DPD2D383BA",
+    "status": "Finalizado",
+    "opcao": "3",
+    "name": "JUAN FERREIRA SALES DA SILVA"
+  },
+  "120363317812663239@g.us": {
+    "chatId": "120363317812663239@g.us",
+    "awaitingResponse": "matricula",
+    "matricula": null,
+    "name": null,
+    "opcao": null,
+    "detalhes": null,
+    "rating": null,
+    "code": null,
+    "status": null
+  },
+  "559492822250@c.us": {
+    "awaitingResponse": "maisInformacoesOuVoltar",
+    "matricula": "071920",
+    "name": "JONESKEULLE MOURA CAVALCANTE",
+    "opcao": "1"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules
+node_modules
+node_modules
+node_modules
+node_modules
+node_modules
+node_modules
+
+# managed
+**.data.json
+**.node-persist**
+**_IGNORE_**
+# end managed
+node_modules
